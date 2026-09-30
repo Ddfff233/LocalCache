@@ -4,11 +4,12 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
+import org.apache.ibatis.type.ByteArrayTypeHandler;
 
 /**
  * 缓存条目持久化实体。
  */
-@TableName(value ="cache_entry")
+@TableName(value = "cache_entry", autoResultMap = true)
 @Data
 public class CacheEntry {
     @TableId(value = "key")
@@ -23,6 +24,6 @@ public class CacheEntry {
     @TableField(value = "update_at")
     private Long updateAt;
 
-    @TableField(value = "value")
+    @TableField(value = "value", typeHandler = ByteArrayTypeHandler.class)
     private byte[] value;
 }

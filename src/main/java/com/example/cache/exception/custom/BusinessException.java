@@ -1,4 +1,4 @@
-package com.example.cache.exception;
+package com.example.cache.exception.custom;
 
 public class BusinessException extends RuntimeException {
 

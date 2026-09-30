@@ -1,6 +1,7 @@
 package com.example.cache.exception;
 
 import com.example.cache.domain.R;
+import com.example.cache.exception.custom.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

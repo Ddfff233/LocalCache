@@ -9,6 +9,8 @@
             <result property="expireAt" column="expire_at" />
             <result property="createAt" column="create_at" />
             <result property="updateAt" column="update_at" />
+            <result property="value" column="value"
+                    typeHandler="org.apache.ibatis.type.ByteArrayTypeHandler" />
     </resultMap>
 
     <sql id="Base_Column_List">

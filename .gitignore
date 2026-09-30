@@ -34,4 +34,7 @@ build/
 .vscode/
 
 
+*.md
+
+
 docs/

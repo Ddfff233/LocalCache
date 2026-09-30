@@ -9,8 +9,8 @@ import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.Ticker;
 import jakarta.annotation.PostConstruct;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 
@@ -27,7 +27,6 @@ import java.util.concurrent.TimeUnit;
  * 提供读穿透和关闭回写能力的本地持久化缓存引擎。
  */
 @Configuration
-@Slf4j
 public class CacheConfig implements DisposableBean {
 
     private final CacheEntryService cacheEntryService;
@@ -36,6 +35,7 @@ public class CacheConfig implements DisposableBean {
     private final Map<String, PendingChange> pendingChanges = new HashMap<>();
     private final Cache<String, CacheValue> cache;
 
+    @Autowired
     public CacheConfig(CacheEntryService cacheEntryService,
                        @Value("${cache.max-size}") long maximumSize) {
         this(cacheEntryService, maximumSize, Clock.systemUTC(), Ticker.systemTicker());
@@ -45,11 +45,11 @@ public class CacheConfig implements DisposableBean {
         if (maximumSize <= 0) {
             throw new IllegalArgumentException("缓存最大容量必须大于零");
         }
-        this.cacheEntryService = Objects.requireNonNull(cacheEntryService, "cacheEntryService");
-        this.clock = Objects.requireNonNull(clock, "clock");
+        this.cacheEntryService = Objects.requireNonNull(cacheEntryService, "缓存持久化服务不能为空");
+        this.clock = Objects.requireNonNull(clock, "时钟不能为空");
         this.cache = Caffeine.newBuilder()
                 .maximumSize(maximumSize)
-                .ticker(Objects.requireNonNull(ticker, "ticker"))
+                .ticker(Objects.requireNonNull(ticker, "计时器不能为空"))
                 .expireAfter(new PerEntryExpiry(clock))
                 .executor(Runnable::run)
                 .removalListener(this::handleRemoval)
@@ -172,20 +172,16 @@ public class CacheConfig implements DisposableBean {
                 }
             });
 
-            try {
-                cacheEntryService.applyChanges(upserts, deletes);
-                pendingChanges.clear();
-            } catch (RuntimeException exception) {
-                log.error("应用关闭时持久化待处理缓存变更失败", exception);
-                throw exception;
-            }
+            cacheEntryService.applyChanges(upserts, deletes);
+            pendingChanges.clear();
         }
     }
 
     private CacheValue findValue(String key) {
+        long now = clock.millis();
         CacheValue cached = cache.getIfPresent(key);
         if (cached != null) {
-            return cached;
+            return getUnexpiredValue(key, cached, now);
         }
 
         PendingChange pending = pendingChanges.get(key);
@@ -193,15 +189,18 @@ public class CacheConfig implements DisposableBean {
             if (pending.type() == ChangeType.DELETE) {
                 return null;
             }
-            cache.put(key, pending.value());
-            return pending.value();
+            CacheValue value = getUnexpiredValue(key, pending.value(), now);
+            if (value != null) {
+                cache.put(key, value);
+            }
+            return value;
         }
 
         CacheEntry entry = cacheEntryService.getById(key);
         if (entry == null) {
             return null;
         }
-        if (isExpired(entry.getExpireAt(), clock.millis())) {
+        if (isExpired(entry.getExpireAt(), now)) {
             pendingChanges.put(key, PendingChange.delete());
             return null;
         }
@@ -209,6 +208,15 @@ public class CacheConfig implements DisposableBean {
         CacheValue value = toCacheValue(entry);
         cache.put(key, value);
         return value;
+    }
+
+    private CacheValue getUnexpiredValue(String key, CacheValue value, long now) {
+        if (!isExpired(value.getExpireAt(), now)) {
+            return value;
+        }
+        pendingChanges.put(key, PendingChange.delete());
+        cache.invalidate(key);
+        return null;
     }
 
     private void handleRemoval(String key, CacheValue value, RemovalCause cause) {
