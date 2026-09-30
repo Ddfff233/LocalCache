@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.cache.mapper.MqQueueDataMapper">
+    <resultMap id="MqQueueDataResultMap" type="com.example.cache.domain.entity.MqQueueData">
+        <id property="id" column="id"/>
+        <result property="messageId" column="message_id"/>
+        <result property="queueId" column="queue_id"/>
+        <result property="queueName" column="queue_name"/>
+        <result property="exchangeId" column="exchange_id"/>
+        <result property="exchangeName" column="exchange_name"/>
+        <result property="routingKey" column="routing_key"/>
+        <result property="payload" column="payload" typeHandler="org.apache.ibatis.type.ByteArrayTypeHandler"/>
+        <result property="payloadType" column="payload_type"/>
+        <result property="headers" column="headers"/>
+        <result property="status" column="status"/>
+        <result property="retryCount" column="retry_count"/>
+        <result property="nextRetryAt" column="next_retry_at"/>
+        <result property="ackDeadlineAt" column="ack_deadline_at"/>
+        <result property="lastError" column="last_error"/>
+        <result property="createAt" column="create_at"/>
+        <result property="updateAt" column="update_at"/>
+        <result property="delFlag" column="del_flag"/>
+    </resultMap>
+
+    <select id="selectHead" resultMap="MqQueueDataResultMap">
+        SELECT id, message_id, queue_id, queue_name, exchange_id, exchange_name,
+               routing_key, payload, payload_type, headers, status, retry_count,
+               next_retry_at, ack_deadline_at, last_error, create_at, update_at, del_flag
+        FROM MQ_QUEUE_DATA
+        WHERE queue_name = #{queueName}
+          AND del_flag = 0
+          AND status IN ('PENDING', 'PROCESSING', 'WAITING_RETRY')
+        ORDER BY id ASC
+        LIMIT 1
+    </select>
+
+    <select id="selectRecoverableQueueNames" resultType="java.lang.String">
+        SELECT DISTINCT queue_name
+        FROM MQ_QUEUE_DATA
+        WHERE del_flag = 0
+          AND (
+              status = 'PENDING'
+              OR (status = 'WAITING_RETRY' AND next_retry_at &lt;= #{now})
+              OR (status = 'PROCESSING' AND ack_deadline_at &lt;= #{now})
+          )
+    </select>
+</mapper>
