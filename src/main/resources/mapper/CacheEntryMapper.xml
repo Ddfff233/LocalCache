@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.cache.mapper.CacheEntryMapper">
+
+    <resultMap id="BaseResultMap" type="com.example.cache.domain.entity.CacheEntry">
+            <id property="key" column="key" />
+            <result property="expireAt" column="expire_at" />
+            <result property="createAt" column="create_at" />
+            <result property="updateAt" column="update_at" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        key,expire_at,create_at,update_at,value
+    </sql>
+</mapper>
