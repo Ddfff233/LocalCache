@@ -10,8 +10,23 @@ spring:
   sql:
     init:
       mode: always
-      schema-locations: classpath:db/data.sql
+      schema-locations:
+        - classpath:db/data.sql
+        - classpath:db/2026-09-30-Caffeine持久化MQ.sql
 
 
 cache:
   max-size: 100000
+  mq:
+    ack-timeout: 30s
+    recovery-interval: 1s
+    dead-letter-queue: MQ_DEFAULT_DEAD_LETTER
+    consumer:
+      core-pool-size: 4
+      max-pool-size: 16
+      queue-capacity: 1000
+    retry:
+      max-attempts: 3
+      initial-delay: 1s
+      multiplier: 2
+      max-delay: 30s

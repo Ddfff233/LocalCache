@@ -17,6 +17,7 @@
         <result property="retryCount" column="retry_count"/>
         <result property="nextRetryAt" column="next_retry_at"/>
         <result property="ackDeadlineAt" column="ack_deadline_at"/>
+        <result property="deliveryToken" column="delivery_token"/>
         <result property="lastError" column="last_error"/>
         <result property="createAt" column="create_at"/>
         <result property="updateAt" column="update_at"/>
@@ -26,7 +27,8 @@
     <select id="selectHead" resultMap="MqQueueDataResultMap">
         SELECT id, message_id, queue_id, queue_name, exchange_id, exchange_name,
                routing_key, payload, payload_type, headers, status, retry_count,
-               next_retry_at, ack_deadline_at, last_error, create_at, update_at, del_flag
+               next_retry_at, ack_deadline_at, delivery_token, last_error,
+               create_at, update_at, del_flag
         FROM MQ_QUEUE_DATA
         WHERE queue_name = #{queueName}
           AND del_flag = 0

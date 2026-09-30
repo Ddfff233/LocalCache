@@ -86,33 +86,37 @@ public class MqMessageServiceImpl implements MqMessageService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public boolean markProcessing(long id, long ackDeadlineAt) {
+    public boolean markProcessing(long id, long ackDeadlineAt, String deliveryToken) {
         return queueDataMapper.update(null, new LambdaUpdateWrapper<MqQueueData>()
                 .eq(MqQueueData::getId, id)
                 .in(MqQueueData::getStatus, CacheMqMessageStatus.PENDING,
                         CacheMqMessageStatus.WAITING_RETRY)
                 .set(MqQueueData::getStatus, CacheMqMessageStatus.PROCESSING)
                 .set(MqQueueData::getAckDeadlineAt, ackDeadlineAt)
+                .set(MqQueueData::getDeliveryToken, deliveryToken)
                 .set(MqQueueData::getNextRetryAt, null)) == 1;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public boolean acknowledge(long id) {
+    public boolean acknowledge(long id, String deliveryToken) {
         return queueDataMapper.update(null, new LambdaUpdateWrapper<MqQueueData>()
                 .eq(MqQueueData::getId, id)
                 .eq(MqQueueData::getStatus, CacheMqMessageStatus.PROCESSING)
+                .eq(MqQueueData::getDeliveryToken, deliveryToken)
                 .set(MqQueueData::getStatus, CacheMqMessageStatus.ACKED)
                 .set(MqQueueData::getAckDeadlineAt, null)
+                .set(MqQueueData::getDeliveryToken, null)
                 .set(MqQueueData::getLastError, null)) == 1;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public CacheMqFailureResult handleFailure(long queueDataId,
+    public CacheMqFailureResult handleFailure(long queueDataId, String deliveryToken,
                                               String failureReason, long now) {
         MqQueueData data = queueDataMapper.selectById(queueDataId);
-        if (data == null || data.getStatus() != CacheMqMessageStatus.PROCESSING) {
+        if (data == null || data.getStatus() != CacheMqMessageStatus.PROCESSING
+                || deliveryToken == null || !deliveryToken.equals(data.getDeliveryToken())) {
             return CacheMqFailureResult.unchanged();
         }
         String normalizedReason = normalizeFailureReason(failureReason);
@@ -127,16 +131,18 @@ public class MqMessageServiceImpl implements MqMessageService {
             int updated = queueDataMapper.update(null, new LambdaUpdateWrapper<MqQueueData>()
                     .eq(MqQueueData::getId, queueDataId)
                     .eq(MqQueueData::getStatus, CacheMqMessageStatus.PROCESSING)
+                    .eq(MqQueueData::getDeliveryToken, deliveryToken)
                     .set(MqQueueData::getStatus, CacheMqMessageStatus.WAITING_RETRY)
                     .set(MqQueueData::getRetryCount, nextRetryCount)
                     .set(MqQueueData::getNextRetryAt, nextRetryAt)
                     .set(MqQueueData::getAckDeadlineAt, null)
+                    .set(MqQueueData::getDeliveryToken, null)
                     .set(MqQueueData::getLastError, normalizedReason));
             return updated == 1
                     ? new CacheMqFailureResult(true, true, false, nextRetryAt)
                     : CacheMqFailureResult.unchanged();
         }
-        return moveToDeadLetter(data, normalizedReason, now);
+        return moveToDeadLetter(data, deliveryToken, normalizedReason, now);
     }
 
     @Override
@@ -144,7 +150,7 @@ public class MqMessageServiceImpl implements MqMessageService {
         return new LinkedHashSet<>(queueDataMapper.selectRecoverableQueueNames(now));
     }
 
-    private CacheMqFailureResult moveToDeadLetter(MqQueueData data,
+    private CacheMqFailureResult moveToDeadLetter(MqQueueData data, String deliveryToken,
                                                    String failureReason, long now) {
         MqQueueDeadLetter deadLetter = new MqQueueDeadLetter();
         deadLetter.setSourceQueueDataId(data.getId());
@@ -169,8 +175,10 @@ public class MqMessageServiceImpl implements MqMessageService {
                     new LambdaUpdateWrapper<MqQueueData>()
                             .eq(MqQueueData::getId, data.getId())
                             .eq(MqQueueData::getStatus, CacheMqMessageStatus.PROCESSING)
+                            .eq(MqQueueData::getDeliveryToken, deliveryToken)
                             .set(MqQueueData::getStatus, CacheMqMessageStatus.DEAD_LETTER)
                             .set(MqQueueData::getAckDeadlineAt, null)
+                            .set(MqQueueData::getDeliveryToken, null)
                             .set(MqQueueData::getNextRetryAt, null)
                             .set(MqQueueData::getLastError, failureReason));
             if (updated != 1) {

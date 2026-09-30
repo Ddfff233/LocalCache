@@ -30,6 +30,7 @@ public class MqQueueData {
     private Integer retryCount;
     private Long nextRetryAt;
     private Long ackDeadlineAt;
+    private String deliveryToken;
     private String lastError;
     @TableField(fill = FieldFill.INSERT)
     private Long createAt;

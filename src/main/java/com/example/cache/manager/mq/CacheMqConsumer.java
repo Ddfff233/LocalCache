@@ -31,6 +31,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -182,7 +183,7 @@ public class CacheMqConsumer implements SmartInitializingSingleton {
         if (data.getStatus() == CacheMqMessageStatus.PROCESSING) {
             if (data.getAckDeadlineAt() != null && data.getAckDeadlineAt() <= now) {
                 CacheMqFailureResult result = messageService.handleFailure(
-                        data.getId(), "消息确认超时", now);
+                        data.getId(), data.getDeliveryToken(), "消息确认超时", now);
                 return result.deadLettered();
             }
             return false;
@@ -200,39 +201,40 @@ public class CacheMqConsumer implements SmartInitializingSingleton {
             return false;
         }
         long ackDeadlineAt = now + properties.getAckTimeout().toMillis();
-        if (!messageService.markProcessing(data.getId(), ackDeadlineAt)) {
+        String deliveryToken = UUID.randomUUID().toString();
+        if (!messageService.markProcessing(data.getId(), ackDeadlineAt, deliveryToken)) {
             return true;
         }
         try {
             Object payload = objectMapper.readValue(data.getPayload(), listener.payloadType());
             if (listener.ackMode() == CacheMqAckMode.AUTO) {
                 listener.method().invoke(listener.bean(), payload);
-                messageService.acknowledge(data.getId());
+                messageService.acknowledge(data.getId(), deliveryToken);
                 return true;
             }
-            CacheMqAckContext context = createAckContext(data);
+            CacheMqAckContext context = createAckContext(data, deliveryToken);
             listener.method().invoke(listener.bean(), payload, context);
             return context.isCompleted() && messageService.findHead(data.getQueueName()) == null;
         } catch (InvocationTargetException exception) {
             Throwable target = exception.getTargetException();
-            handleConsumerFailure(data, target);
+            handleConsumerFailure(data, deliveryToken, target);
             return false;
         } catch (Exception exception) {
-            handleConsumerFailure(data, exception);
+            handleConsumerFailure(data, deliveryToken, exception);
             return false;
         }
     }
 
-    private CacheMqAckContext createAckContext(MqQueueData data) {
+    private CacheMqAckContext createAckContext(MqQueueData data, String deliveryToken) {
         return new CacheMqAckContext(data.getMessageId(), () -> {
-            boolean acknowledged = messageService.acknowledge(data.getId());
+            boolean acknowledged = messageService.acknowledge(data.getId(), deliveryToken);
             if (acknowledged) {
                 scheduleQueue(data.getQueueName());
             }
             return acknowledged;
         }, reason -> {
             CacheMqFailureResult result = messageService.handleFailure(
-                    data.getId(), reason, System.currentTimeMillis());
+                    data.getId(), deliveryToken, reason, System.currentTimeMillis());
             if (result.stateChanged()) {
                 scheduleQueue(data.getQueueName());
             }
@@ -240,12 +242,14 @@ public class CacheMqConsumer implements SmartInitializingSingleton {
         });
     }
 
-    private void handleConsumerFailure(MqQueueData data, Throwable throwable) {
+    private void handleConsumerFailure(MqQueueData data, String deliveryToken,
+                                       Throwable throwable) {
         log.error("消费 MQ 消息失败，消息标识：{}，Queue：{}",
                 data.getMessageId(), data.getQueueName(), throwable);
         String reason = throwable.getMessage() == null
                 ? "消费监听方法执行失败" : throwable.getMessage();
-        messageService.handleFailure(data.getId(), reason, System.currentTimeMillis());
+        messageService.handleFailure(data.getId(), deliveryToken,
+                reason, System.currentTimeMillis());
     }
 
     private boolean isImmediatelyExecutable(MqQueueData data, long now) {

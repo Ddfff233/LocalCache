@@ -17,11 +17,12 @@ public interface MqMessageService {
 
     MqQueueData findHead(String queueName);
 
-    boolean markProcessing(long id, long ackDeadlineAt);
+    boolean markProcessing(long id, long ackDeadlineAt, String deliveryToken);
 
-    boolean acknowledge(long id);
+    boolean acknowledge(long id, String deliveryToken);
 
-    CacheMqFailureResult handleFailure(long queueDataId, String failureReason, long now);
+    CacheMqFailureResult handleFailure(long queueDataId, String deliveryToken,
+                                       String failureReason, long now);
 
     Set<String> findRecoverableQueueNames(long now);
 }
