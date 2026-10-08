@@ -35,6 +35,7 @@ build/
 
 
 *.md
+!README.md
 
 
 docs/
